@@ -17,11 +17,14 @@ import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import java.util.logging.Logger;
 
 /**
  * Compute the graph of related builds, based on {@link Cause.UpstreamCause}.
  */
 public class BuildGraph implements Action {
+
+	private static final Logger LOGGER = Logger.getLogger(BuildGraph.class.getName());
 
     private transient DirectedGraph<BuildExecution, Edge> graph;
 
@@ -29,8 +32,16 @@ public class BuildGraph implements Action {
 
     private transient int index = 0;
 
+    // maximum number of graph vertexes and edges (Performance restriction and memory heap size reduction in case errors)
+    private static final int MAX_GRAPH_SIZE = 1000;
+    private int currentSize = 0;
+
     public BuildGraph(AbstractBuild run) {
         this.start = new BuildExecution(run, 0);
+    }
+
+    public int getCurrentSize() {
+        return currentSize;
     }
 
     public String getIconFileName() {
@@ -53,8 +64,13 @@ public class BuildGraph implements Action {
         graph = new SimpleDirectedGraph<BuildExecution, Edge>(Edge.class);
         graph.addVertex(start);
         index = 0;
+        currentSize = 1;
+        LOGGER.info("Build Graph generation started.");
         computeGraphFrom(start);
+        LOGGER.info("Build Graph generated with: '" + currentSize + "' edges.");
+        LOGGER.info("Build Graph preparing graph structure.");
         setupDisplayGrid();
+        LOGGER.info("Build Graph graph structure generated.");
         return graph;
     }
 
@@ -66,6 +82,11 @@ public class BuildGraph implements Action {
                 BuildExecution next = getExecution(r);
                 graph.addVertex(next); // ignore if already added
                 graph.addEdge(b, next, new Edge(b, next));
+                if (this.currentSize++ >= MAX_GRAPH_SIZE) {
+                    LOGGER.severe("Maximum graph size reached '" + MAX_GRAPH_SIZE + "'. Stopped generating the rest.");
+                    // avoid infinite recurse and cycle and memory consumption
+                    break;
+                }
                 computeGraphFrom(next);
             }
         }
